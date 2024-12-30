@@ -1,0 +1,1985 @@
+Description: "(SO0018) - cost-optimizer-for-amazon-workspaces: A solution for automatically optimizing the cost of Amazon Workspaces version v2.7.4"
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Select New or Existing VPC for AWS Fargate
+        Parameters:
+          - CreateNewVPC
+      - Label:
+          default: Existing VPC Settings
+        Parameters:
+          - ExistingPublicSubnetId
+          - ExistingPrivateSubnetId
+          - ExistingPrivateSubnet2Id
+          - ExistingSecurityGroupId
+      - Label:
+          default: New VPC Settings
+        Parameters:
+          - VpcCIDR
+          - PublicSubnetCIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+          - EgressCIDR
+      - Label:
+          default: Testing Parameters
+        Parameters:
+          - DryRun
+          - TestEndOfMonth
+          - LogLevel
+      - Label:
+          default: Pricing Parameters
+        Parameters:
+          - ValueLimit
+          - StandardLimit
+          - PerformanceLimit
+          - GraphicsG4dnLimit
+          - GraphicsProG4dnLimit
+          - PowerLimit
+          - PowerProLimit
+      - Label:
+          default: Container Image
+        Parameters:
+          - UseStableTagging
+      - Label:
+          default: List of AWS Regions
+        Parameters:
+          - Regions
+      - Label:
+          default: Terminate unused workspaces
+        Parameters:
+          - TerminateUnusedWorkspaces
+          - NumberOfMonthsForTerminationCheck
+      - Label:
+          default: Multi account deployment
+        Parameters:
+          - OrganizationID
+          - ManagementAccountId
+    ParameterLabels:
+      VpcCIDR:
+        default: AWS Fargate VPC CIDR Block
+      PublicSubnetCIDR:
+        default: Public Subnet CIDR Block
+      PrivateSubnet1CIDR:
+        default: AWS Fargate Private Subnet 1 CIDR Block
+      PrivateSubnet2CIDR:
+        default: AWS Fargate Private Subnet 2 CIDR Block
+      EgressCIDR:
+        default: AWS Fargate SecurityGroup CIDR Block
+      DryRun:
+        default: Launch in Dry Run Mode
+      TestEndOfMonth:
+        default: Simulate End of Month Cleanup
+      LogLevel:
+        default: Log Level
+      CreateNewVPC:
+        default: Create New VPC
+      ExistingPublicSubnetId:
+        default: Public Subnet ID
+      ExistingPrivateSubnetId:
+        default: First Private Subnet ID
+      ExistingPrivateSubnet2Id:
+        default: Second Private Subnet ID
+      ExistingSecurityGroupId:
+        default: Security group ID to launch ECS task
+      UseStableTagging:
+        default: Auto-update Container Image
+      Regions:
+        default: List of AWS Regions
+      TerminateUnusedWorkspaces:
+        default: Terminate workspaces not used for a month
+      OrganizationID:
+        default: Organization ID for multi account deployment
+      ManagementAccountId:
+        default: Account ID of the Management Account for the Organization
+      NumberOfMonthsForTerminationCheck:
+        default: Number of months for termination check
+Parameters:
+  CreateNewVPC:
+    Type: String
+    Default: "Yes"
+    AllowedValues:
+      - "Yes"
+      - "No"
+    Description: Select "Yes" to deploy the solution in a new VPC.
+  ExistingPrivateSubnetId:
+    Type: String
+    Default: ""
+    Description: A Private Subnet ID to launch ECS task. Leave this blank if you selected "Yes" for "Create New VPC"
+  ExistingPrivateSubnet2Id:
+    Type: String
+    Default: ""
+    Description: A second Private Subnet ID to launch ECS task. Leave this blank if you selected "Yes" for "Create New VPC"
+  ExistingPublicSubnetId:
+    Type: String
+    Default: ""
+    Description: A public Subnet ID to launch the gateway. Leave this blank if you selected "Yes" for "Create New VPC"
+  ExistingSecurityGroupId:
+    Type: String
+    Default: ""
+    Description: Security Group Id to launch ECS task. Leave this blank is you selected "Yes" for "Create New VPC"
+  VpcCIDR:
+    Type: String
+    Default: 10.215.0.0/16
+    AllowedPattern: (?:^$|(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2}))
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Description: This VPC launches containers. Change addresses only if it conflicts with your network.
+    MaxLength: 18
+    MinLength: 9
+  PublicSubnetCIDR:
+    Type: String
+    Default: 10.215.10.0/24
+    AllowedPattern: (?:^$|(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2}))
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Description: CIDR block for the public subnet. This subnet hosts internet-facing resources and NAT Gateway, enabling private subnets to access the internet indirectly.
+    MaxLength: 18
+    MinLength: 9
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: 10.215.30.0/24
+    AllowedPattern: (?:^$|(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2}))
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Description: CIDR block for the first private subnet. This subnet is for launching the container that should not be directly accessible from the internet.
+    MaxLength: 18
+    MinLength: 9
+  PrivateSubnet2CIDR:
+    Type: String
+    Default: 10.215.40.0/24
+    AllowedPattern: (?:^$|(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2}))
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Description: CIDR block for the second private subnet. Use this for high availability across multiple subnets.
+    MaxLength: 18
+    MinLength: 9
+  EgressCIDR:
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: (?:^$|(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2}))
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Description: The Cidir Block to restrict the ECS container outbound access
+    MaxLength: 18
+    MinLength: 9
+  LogLevel:
+    Type: String
+    Default: INFO
+    AllowedValues:
+      - CRITICAL
+      - ERROR
+      - INFO
+      - WARNING
+      - DEBUG
+  DryRun:
+    Type: String
+    Default: "Yes"
+    AllowedValues:
+      - "Yes"
+      - "No"
+    Description: Solution will generate a change log, but not execute any changes.
+  TestEndOfMonth:
+    Type: String
+    Default: "No"
+    AllowedValues:
+      - "Yes"
+      - "No"
+    Description: Overrides date and forces the solution to run as if it is the end of the month.
+  Regions:
+    Type: String
+    Default: ""
+    Description: The list of AWS regions which the solution will scan. Example - us-east-1, us-west-2. Leave blank to scan all regions.
+  TerminateUnusedWorkspaces:
+    Type: String
+    Default: "No"
+    AllowedValues:
+      - "Yes"
+      - "No"
+      - Dry Run
+    Description: Select "Yes" to terminate Workspaces not used for a month.
+  ValueLimit:
+    Type: Number
+    Default: 81
+    Description: The number of hours a Value instance can run in a month before being converted to ALWAYS_ON. Default is 81.
+  StandardLimit:
+    Type: Number
+    Default: 85
+    Description: The number of hours a Standard instance can run in a month before being converted to ALWAYS_ON. Default is 85.
+  PerformanceLimit:
+    Type: Number
+    Default: 80
+    Description: The number of hours a Performance instance can run in a month before being converted to ALWAYS_ON. Default is 80.
+  PowerLimit:
+    Type: Number
+    Default: 92
+    Description: The number of hours a Power instance can run in a month before being converted to ALWAYS_ON. Default is 92.
+  PowerProLimit:
+    Type: Number
+    Default: 78
+    Description: The number of hours a Power Pro instance can run in a month before being converted to ALWAYS_ON. Default is 78.
+  GraphicsG4dnLimit:
+    Type: Number
+    Default: 334
+    Description: The number of hours a Graphics.g4dn instance can run in a month before being converted to ALWAYS_ON. Default is 334.
+  GraphicsProG4dnLimit:
+    Type: Number
+    Default: 80
+    Description: The number of hours a GraphicsPro.g4dn instance can run in a month before being converted to ALWAYS_ON. Default is 80.
+  OrganizationID:
+    Type: String
+    Default: ""
+    AllowedPattern: ^$|^o-[a-z0-9]{10,32}$
+    Description: Organization ID to support multi account deployment. Leave blank for single account deployments.
+  ManagementAccountId:
+    Type: String
+    Default: ""
+    Description: Account ID for the management account of the Organization. Leave blank for single account deployments.
+  NumberOfMonthsForTerminationCheck:
+    Type: String
+    Default: "1"
+    AllowedValues:
+      - "1"
+      - "2"
+      - "3"
+      - "4"
+      - "5"
+      - "6"
+      - "7"
+      - "8"
+      - "9"
+      - "10"
+      - "11"
+      - "12"
+      - "13"
+      - "14"
+      - "15"
+    Description: Provide the number of months to check for inactive period before termination. Default value is 1 month.
+  UseStableTagging:
+    Type: String
+    Default: "Yes"
+    AllowedValues:
+      - "Yes"
+      - "No"
+    Description: Automatically use the most up to date and secure image up until the next minor release. Selecting 'No' will pull the image as originally released, without any security updates.
+Mappings:
+  Solution:
+    Data:
+      ClusterName: cost-optimizer-cluster
+      TaskDefinitionName: wco-task
+      LogGroupName: /ecs/wco-task
+      ID: SO0018
+      Version: v2.7.4
+      SendAnonymousUsageData: "True"
+      MetricsURL: https://metrics.awssolutionsbuilder.com/generic
+      AutoStopTimeoutHours: 1
+      Image: public.ecr.aws/aws-solutions/workspaces-cost-optimizer:v2.7.4
+      StableImage: public.ecr.aws/aws-solutions/workspaces-cost-optimizer:v2.7_stable
+      RoleName: Workspaces-Cost-Optimizer
+      RegisterLambdaFunctionName: Register-Spoke-Accounts
+      SpokeAccountWorkspacesRole: Workspaces-Admin-Spoke
+      TagKey: CloudFoundations:CostOptimizerForWorkspaces
+      AppRegistryApplicationName: workspaces-cost-optimizer
+      SolutionName: Cost Optimizer for Amazon Workspaces
+Conditions:
+  CreateNewVPCCondition:
+    Fn::Equals:
+      - Ref: CreateNewVPC
+      - "Yes"
+  UseExistingVPCCondition:
+    Fn::Equals:
+      - Ref: CreateNewVPC
+      - "No"
+  organizationIdInputParameter:
+    Fn::Equals:
+      - Ref: OrganizationID
+      - ""
+  managementIdInputParameter:
+    Fn::Equals:
+      - Ref: ManagementAccountId
+      - ""
+  ManagementAccountSetupCondition:
+    Fn::Not:
+      - Condition: managementIdInputParameter
+  OrganizationSetupCondition:
+    Fn::Not:
+      - Condition: organizationIdInputParameter
+  MultiAccountDeploymentCondition:
+    Fn::And:
+      - Condition: OrganizationSetupCondition
+      - Condition: ManagementAccountSetupCondition
+  CreateDynamoDBEndpointCondition:
+    Fn::And:
+      - Condition: CreateNewVPCCondition
+      - Condition: MultiAccountDeploymentCondition
+  UseStableTagCondition:
+    Fn::Equals:
+      - Ref: UseStableTagging
+      - "Yes"
+Resources:
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: " Access logging is not required for this bucket."
+          - id: W51
+            reason: Policy is not required for this bucket.
+  UsageReportBucketResourcesAccessLoggingBucketPolicyE13961AA:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: LogsBucket
+      PolicyDocument:
+        Statement:
+          - Action: s3:*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+            Effect: Deny
+            Principal:
+              AWS: "*"
+            Resource:
+              - Fn::GetAtt:
+                  - LogsBucket
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - LogsBucket
+                        - Arn
+                    - /*
+          - Action: s3:PutObject
+            Condition:
+              ArnLike:
+                aws:SourceArn:
+                  Fn::GetAtt:
+                    - CostOptimizerBucket
+                    - Arn
+              StringEquals:
+                aws:SourceAccount:
+                  Ref: AWS::AccountId
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Resource:
+              Fn::Join:
+                - ""
+                - - Fn::GetAtt:
+                      - LogsBucket
+                      - Arn
+                  - /wco_bucket/*
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/UsageReportBucketResources/AccessLoggingBucket/Policy/Resource
+  CostOptimizerBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 365
+            Id: DeletionRule
+            Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName:
+          Ref: LogsBucket
+        LogFilePrefix: wco_bucket/
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W51
+            reason: Policy is not required for this bucket.
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: CostOptimizerBucket
+      PolicyDocument:
+        Statement:
+          - Action: s3:*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+            Effect: Deny
+            Principal:
+              AWS: "*"
+            Resource:
+              - Fn::GetAtt:
+                  - CostOptimizerBucket
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - CostOptimizerBucket
+                        - Arn
+                    - /*
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/UsageReportBucketResources/CostOptimizerBucket/Policy/Resource
+  SpokeAccountTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: account_id
+          AttributeType: S
+        - AttributeName: role_name
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: account_id
+          KeyType: HASH
+        - AttributeName: role_name
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      guard:
+        SuppressedRules:
+          - DYNAMODB_TABLE_ENCRYPTED_KMS
+    Condition: MultiAccountDeploymentCondition
+  UsageTable28300137:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: WorkspaceId
+          AttributeType: S
+        - AttributeName: Region
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: WorkspaceId
+          KeyType: HASH
+        - AttributeName: Region
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      guard:
+        SuppressedRules:
+          - DYNAMODB_TABLE_ENCRYPTED_KMS
+  UserSessionTableCD18DD22:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: WorkspaceId
+          AttributeType: S
+        - AttributeName: SessionTime
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: WorkspaceId
+          KeyType: HASH
+        - AttributeName: SessionTime
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      guard:
+        SuppressedRules:
+          - DYNAMODB_TABLE_ENCRYPTED_KMS
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock:
+        Ref: VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key:
+            Fn::FindInMap:
+              - Solution
+              - Data
+              - TagKey
+          Value:
+            Ref: AWS::StackName
+        - Key: Name
+          Value: cost-optimizer-vpc
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/VPC
+    Condition: CreateNewVPCCondition
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key:
+            Fn::FindInMap:
+              - Solution
+              - Data
+              - TagKey
+          Value:
+            Ref: AWS::StackName
+        - Key: Name
+          Value: cost-optimizer-igw
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/InternetGateway
+    Condition: CreateNewVPCCondition
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock:
+        Ref: PublicSubnetCIDR
+      Tags:
+        - Key: Name
+          Value: cost-optimizer-vpc-public-subnet
+      VpcId:
+        Ref: VPC
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PublicSubnet
+    Condition: CreateNewVPCCondition
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock:
+        Ref: PrivateSubnet1CIDR
+      Tags:
+        - Key: Name
+          Value: cost-optimizer-vpc-private-subnet-1
+      VpcId:
+        Ref: VPC
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PrivateSubnet1
+    Condition: CreateNewVPCCondition
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: ""
+      CidrBlock:
+        Ref: PrivateSubnet2CIDR
+      Tags:
+        - Key: Name
+          Value: cost-optimizer-vpc-private-subnet-2
+      VpcId:
+        Ref: VPC
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PrivateSubnet2
+    Condition: CreateNewVPCCondition
+  IntraVPCSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group that allows inbound from the VPC and outbound to the Internet
+      VpcId:
+        Ref: VPC
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W36
+            reason: flagged as not having a Description, property is GroupDescription not Description
+          - id: W40
+            reason: IpProtocol set to -1 (any) as ports are not known prior to running tests
+      guard:
+        SuppressedRules:
+          - SECURITY_GROUP_MISSING_EGRESS_RULE
+    Condition: CreateNewVPCCondition
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: VPC
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PublicRouteTable
+    Condition: CreateNewVPCCondition
+  MainRoutePrivateTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: VPC
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/MainRoutePrivateTable
+    Condition: CreateNewVPCCondition
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId:
+        Ref: InternetGateway
+      VpcId:
+        Ref: VPC
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/InternetGatewayAttachment
+    Condition: CreateNewVPCCondition
+  CostOptimizerVpcNatGatewayEIP022C0087:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/NatGatewayEIP
+    Condition: CreateNewVPCCondition
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - CostOptimizerVpcNatGatewayEIP022C0087
+          - AllocationId
+      SubnetId:
+        Ref: Subnet1
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/NatGateway
+    Condition: CreateNewVPCCondition
+  SecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      CidrIp:
+        Ref: EgressCIDR
+      Description: allow egress from cidr
+      GroupId:
+        Fn::GetAtt:
+          - IntraVPCSecurityGroup
+          - GroupId
+      IpProtocol: "-1"
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/SecurityGroupEgress
+    Condition: CreateNewVPCCondition
+  PublicRouteToInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+      RouteTableId:
+        Ref: PublicRouteTable
+    DependsOn:
+      - InternetGatewayAttachment
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PublicRouteToInternet
+    Condition: CreateNewVPCCondition
+  PrivateRouteToInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NatGateway
+      RouteTableId:
+        Ref: MainRoutePrivateTable
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PrivateRouteToInternet
+    Condition: CreateNewVPCCondition
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Ref: PublicRouteTable
+      SubnetId:
+        Fn::GetAtt:
+          - Subnet1
+          - SubnetId
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PublicSubnetRouteTableAssociation
+    Condition: CreateNewVPCCondition
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Ref: MainRoutePrivateTable
+      SubnetId:
+        Fn::GetAtt:
+          - PrivateSubnet1
+          - SubnetId
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PrivateSubnet1RouteTableAssociation
+    Condition: CreateNewVPCCondition
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Ref: MainRoutePrivateTable
+      SubnetId:
+        Fn::GetAtt:
+          - PrivateSubnet2
+          - SubnetId
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/PrivateSubnet2RouteTableAssociation
+    Condition: CreateNewVPCCondition
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:PutObject
+              - s3:GetObject
+            Condition:
+              StringEquals:
+                aws:PrincipalArn:
+                  - Fn::Join:
+                      - ""
+                      - - "arn:"
+                        - Ref: AWS::Partition
+                        - ":iam::"
+                        - Ref: AWS::AccountId
+                        - :role/
+                        - Fn::FindInMap:
+                            - Solution
+                            - Data
+                            - RoleName
+                        - "-"
+                        - Ref: AWS::Region
+                aws:SecureTransport: "true"
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":s3:::"
+                  - Ref: CostOptimizerBucket
+                  - /*
+          - Action: s3:ListBucket
+            Condition:
+              StringEquals:
+                aws:PrincipalArn:
+                  - Fn::Join:
+                      - ""
+                      - - "arn:"
+                        - Ref: AWS::Partition
+                        - ":iam::"
+                        - Ref: AWS::AccountId
+                        - :role/
+                        - Fn::FindInMap:
+                            - Solution
+                            - Data
+                            - RoleName
+                        - "-"
+                        - Ref: AWS::Region
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":s3:::"
+                  - Ref: CostOptimizerBucket
+        Version: "2012-10-17"
+      RouteTableIds:
+        - Ref: MainRoutePrivateTable
+      ServiceName:
+        Fn::Join:
+          - ""
+          - - com.amazonaws.
+            - Ref: AWS::Region
+            - .s3
+      VpcId:
+        Ref: VPC
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/S3GatewayEndpoint
+    Condition: CreateNewVPCCondition
+  DynamoDBGatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: dynamodb:Scan
+            Condition:
+              StringEquals:
+                aws:PrincipalArn:
+                  - Fn::Join:
+                      - ""
+                      - - "arn:"
+                        - Ref: AWS::Partition
+                        - ":iam::"
+                        - Ref: AWS::AccountId
+                        - :role/
+                        - Fn::FindInMap:
+                            - Solution
+                            - Data
+                            - RoleName
+                        - "-"
+                        - Ref: AWS::Region
+                aws:SecureTransport: "true"
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":dynamodb:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :table/
+                  - Ref: SpokeAccountTable
+          - Action:
+              - dynamodb:PutItem
+              - dynamodb:GetItem
+            Condition:
+              StringEquals:
+                aws:PrincipalArn:
+                  - Fn::Join:
+                      - ""
+                      - - "arn:"
+                        - Ref: AWS::Partition
+                        - ":iam::"
+                        - Ref: AWS::AccountId
+                        - :role/
+                        - Fn::FindInMap:
+                            - Solution
+                            - Data
+                            - RoleName
+                        - "-"
+                        - Ref: AWS::Region
+                aws:SecureTransport: "true"
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":dynamodb:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :table/
+                  - Ref: UsageTable28300137
+          - Action: dynamodb:BatchWriteItem
+            Condition:
+              StringEquals:
+                aws:PrincipalArn:
+                  - Fn::Join:
+                      - ""
+                      - - "arn:"
+                        - Ref: AWS::Partition
+                        - ":iam::"
+                        - Ref: AWS::AccountId
+                        - :role/
+                        - Fn::FindInMap:
+                            - Solution
+                            - Data
+                            - RoleName
+                        - "-"
+                        - Ref: AWS::Region
+                aws:SecureTransport: "true"
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":dynamodb:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :table/
+                  - Ref: UserSessionTableCD18DD22
+        Version: "2012-10-17"
+      RouteTableIds:
+        - Ref: MainRoutePrivateTable
+      ServiceName:
+        Fn::Join:
+          - ""
+          - - com.amazonaws.
+            - Ref: AWS::Region
+            - .dynamodb
+      VpcId:
+        Ref: VPC
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/DynamoDBGatewayEndpoint
+    Condition: CreateDynamoDBEndpointCondition
+  FlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 731
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W84
+            reason: CloudWatch logs are encrypted by the service.
+          - id: W86
+            reason: CloudWatch logs are set to never expire.
+    Condition: CreateNewVPCCondition
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/FlowLogRole/Resource
+    Condition: CreateNewVPCCondition
+  FlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn:
+        Fn::GetAtt:
+          - FlowLogRole
+          - Arn
+      LogGroupName:
+        Ref: FlowLogGroup
+      ResourceId:
+        Ref: VPC
+      ResourceType: VPC
+      TrafficType: ALL
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/FlowLog
+    Condition: CreateNewVPCCondition
+  FlowLogsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - FlowLogGroup
+                - Arn
+        Version: "2012-10-17"
+      PolicyName: flowlogs-policy
+      Roles:
+        - Ref: FlowLogRole
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/CostOptimizerVpc/FlowLogsPolicy/Resource
+    Condition: CreateNewVPCCondition
+  SolutionHelperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/UUIDGenerator/UUIDGeneratorFunctionLambdaRole/Resource
+  SolutionHelperPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":logs:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :log-group:/
+                  - Ref: AWS::Partition
+                  - /lambda/*
+          - Action: iam:PassRole
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - SolutionHelperRole
+                - Arn
+          - Action: cloudformation:DescribeStacks
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":cloudformation:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :stack/
+                  - Ref: AWS::StackName
+                  - /*
+          - Action:
+              - xray:PutTraceSegments
+              - xray:PutTelemetryRecords
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: SolutionHelperPolicy
+      Roles:
+        - Ref: SolutionHelperRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: X-ray requires * policy
+  SolutionHelperFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Join:
+            - ""
+            - - solutions-
+              - Ref: AWS::Region
+        S3Key: cost-optimizer-for-amazon-workspaces/v2.7.4/uuid_generator.zip
+      Description: Solution Helper Lambda Function
+      Environment:
+        Variables:
+          USER_AGENT_STRING: AwsSolution/SO0018/v2.7.4
+          LOG_LEVEL:
+            Ref: LogLevel
+      Handler: uuid_generator/uuid_generator.lambda_handler
+      Role:
+        Fn::GetAtt:
+          - SolutionHelperRole
+          - Arn
+      Runtime: python3.11
+      Tags:
+        - Key:
+            Fn::FindInMap:
+              - Solution
+              - Data
+              - TagKey
+          Value:
+            Ref: AWS::StackName
+      Timeout: 300
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - SolutionHelperRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: The lambda function has access to write logs
+          - id: W89
+            reason: The lambda function does not need access to resources in VPC
+          - id: W92
+            reason: The lambda function only executes on stack creation and deletion and so does not need reserved concurrency.
+          - id: W12
+            reason: Resource * is necessary for xray:PutTraceSegments and xray:PutTelemetryRecords.
+  UUIDGenerator:
+    Type: Custom::UUIDGenerator
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - SolutionHelperFunction
+          - Arn
+      Region:
+        Ref: AWS::Region
+      DependsOn:
+        Fn::GetAtt:
+          - SolutionHelperFunction
+          - Arn
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/UUIDGenerator/UUIDCustomResource/Default
+  CostOptimizerCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName:
+        Fn::FindInMap:
+          - Solution
+          - Data
+          - ClusterName
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key:
+            Fn::FindInMap:
+              - Solution
+              - Data
+              - TagKey
+          Value:
+            Ref: AWS::StackName
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/EcsClusterResources/EcsCluster
+  CostOptimizerAdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+        Version: "2012-10-17"
+      RoleName:
+        Fn::Join:
+          - "-"
+          - - Fn::FindInMap:
+                - Solution
+                - Data
+                - RoleName
+            - Ref: AWS::Region
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Static naming is necessary for hub account to assume this role
+      guard:
+        SuppressedRules:
+          - CFN_NO_EXPLICIT_RESOURCE_NAMES
+  CostOptimizerAdminPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":logs:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :log-group:/ecs/wco-task/*
+          - Action:
+              - workspaces:DescribeTags
+              - workspaces:DescribeWorkspaces
+              - workspaces:DescribeWorkspaceDirectories
+              - workspaces:ModifyWorkspaceProperties
+              - workspaces:TerminateWorkspaces
+              - workspaces:DescribeWorkspacesConnectionStatus
+            Effect: Allow
+            Resource:
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - ":workspaces:*:"
+                    - Ref: AWS::AccountId
+                    - :directory/*
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - ":workspaces:*:"
+                    - Ref: AWS::AccountId
+                    - :workspace/*
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - ":workspaces:*:"
+                    - Ref: AWS::AccountId
+                    - :workspacebundle/*
+          - Action:
+              - s3:PutObject
+              - s3:GetObject
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":s3:::"
+                  - Ref: CostOptimizerBucket
+                  - /*
+          - Action: s3:ListBucket
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":s3:::"
+                  - Ref: CostOptimizerBucket
+          - Action:
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:GetMetricData
+            Effect: Allow
+            Resource: "*"
+          - Action: cloudwatch:PutMetricData
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: WorkspacesCostOptimizer
+            Effect: Allow
+            Resource: "*"
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - :iam::*:role/
+                  - Fn::FindInMap:
+                      - Solution
+                      - Data
+                      - SpokeAccountWorkspacesRole
+                  - "-"
+                  - Ref: AWS::Region
+          - Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - UsageTable28300137
+                  - Arn
+              - Ref: AWS::NoValue
+          - Action: dynamodb:BatchWriteItem
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - UserSessionTableCD18DD22
+                  - Arn
+              - Ref: AWS::NoValue
+        Version: "2012-10-17"
+      PolicyName: CostOptimizerAdminPolicy
+      Roles:
+        - Ref: CostOptimizerAdminRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W76
+            reason: Admin policy needed for Fargate container
+          - id: W12
+            reason: getMetricData and getMetricStatistics requires * policy
+  CostOptimizerDynamoDBPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: dynamodb:Scan
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":dynamodb:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :table/
+                  - Ref: SpokeAccountTable
+        Version: "2012-10-17"
+      PolicyName: CostOptimizerDynamoDBPolicy
+      Roles:
+        - Ref: CostOptimizerAdminRole
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/EcsClusterResources/CostOptimizerDynamoDBPolicy/Resource
+    Condition: MultiAccountDeploymentCondition
+  CostOptimizerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Join:
+          - /
+          - - Fn::FindInMap:
+                - Solution
+                - Data
+                - LogGroupName
+            - Ref: AWS::StackName
+      RetentionInDays: 365
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W84
+            reason: KMS encryption unnecessary for log group
+  CostOptimizerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Cpu: 256
+          Environment:
+            - Name: LogLevel
+              Value:
+                Ref: LogLevel
+            - Name: DryRun
+              Value:
+                Ref: DryRun
+            - Name: TestEndOfMonth
+              Value:
+                Ref: TestEndOfMonth
+            - Name: SendAnonymousData
+              Value:
+                Fn::FindInMap:
+                  - Solution
+                  - Data
+                  - SendAnonymousUsageData
+            - Name: SolutionVersion
+              Value:
+                Fn::FindInMap:
+                  - Solution
+                  - Data
+                  - Version
+            - Name: SolutionID
+              Value:
+                Fn::FindInMap:
+                  - Solution
+                  - Data
+                  - ID
+            - Name: UUID
+              Value:
+                Fn::GetAtt:
+                  - UUIDGenerator
+                  - UUID
+            - Name: BucketName
+              Value:
+                Ref: CostOptimizerBucket
+            - Name: ValueLimit
+              Value:
+                Ref: ValueLimit
+            - Name: StandardLimit
+              Value:
+                Ref: StandardLimit
+            - Name: PerformanceLimit
+              Value:
+                Ref: PerformanceLimit
+            - Name: PowerLimit
+              Value:
+                Ref: PowerLimit
+            - Name: PowerProLimit
+              Value:
+                Ref: PowerProLimit
+            - Name: GraphicsG4dnLimit
+              Value:
+                Ref: GraphicsG4dnLimit
+            - Name: GraphicsProG4dnLimit
+              Value:
+                Ref: GraphicsProG4dnLimit
+            - Name: MetricsEndpoint
+              Value:
+                Fn::FindInMap:
+                  - Solution
+                  - Data
+                  - MetricsURL
+            - Name: UserAgentString
+              Value:
+                Fn::Sub:
+                  - AwsSolution/${SolutionID}/${Version}
+                  - SolutionID:
+                      Fn::FindInMap:
+                        - Solution
+                        - Data
+                        - ID
+                    Version:
+                      Fn::FindInMap:
+                        - Solution
+                        - Data
+                        - Version
+            - Name: AutoStopTimeoutHours
+              Value:
+                Fn::FindInMap:
+                  - Solution
+                  - Data
+                  - AutoStopTimeoutHours
+            - Name: Regions
+              Value:
+                Ref: Regions
+            - Name: TerminateUnusedWorkspaces
+              Value:
+                Ref: TerminateUnusedWorkspaces
+            - Name: SpokeAccountDynamoDBTable
+              Value:
+                Fn::If:
+                  - MultiAccountDeploymentCondition
+                  - Ref: SpokeAccountTable
+                  - Ref: AWS::NoValue
+            - Name: UsageTable
+              Value:
+                Ref: UsageTable28300137
+            - Name: UserSessionTable
+              Value:
+                Ref: UserSessionTableCD18DD22
+            - Name: NumberOfMonthsForTerminationCheck
+              Value:
+                Ref: NumberOfMonthsForTerminationCheck
+            - Name: ImageVersion
+              Value:
+                Fn::If:
+                  - UseStableTagCondition
+                  - Fn::FindInMap:
+                      - Solution
+                      - Data
+                      - StableImage
+                  - Fn::FindInMap:
+                      - Solution
+                      - Data
+                      - Image
+            - Name: StableTag
+              Value:
+                Ref: UseStableTagging
+          Essential: true
+          Image:
+            Fn::If:
+              - UseStableTagCondition
+              - Fn::FindInMap:
+                  - Solution
+                  - Data
+                  - StableImage
+              - Fn::FindInMap:
+                  - Solution
+                  - Data
+                  - Image
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Ref: CostOptimizerLogs
+              awslogs-stream-prefix: ecs
+              awslogs-region:
+                Ref: AWS::Region
+          Name: workspace-cost-optimizer
+          ReadonlyRootFilesystem: true
+      Cpu: "256"
+      ExecutionRoleArn:
+        Fn::GetAtt:
+          - CostOptimizerAdminRole
+          - Arn
+      Family:
+        Fn::FindInMap:
+          - Solution
+          - Data
+          - TaskDefinitionName
+      Memory: "1024"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      TaskRoleArn:
+        Fn::GetAtt:
+          - CostOptimizerAdminRole
+          - Arn
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/EcsClusterResources/EcsTaskDefinition
+  InvokeECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/EcsClusterResources/EventsRuleRole/Resource
+  InvokeECSTaskPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: ecs:RunTask
+            Effect: Allow
+            Resource:
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - ":ecs:"
+                    - Ref: AWS::Region
+                    - ":"
+                    - Ref: AWS::AccountId
+                    - :task-definition/wco-task
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - ":ecs:"
+                    - Ref: AWS::Region
+                    - ":"
+                    - Ref: AWS::AccountId
+                    - :task-definition/wco-task:*
+          - Action: iam:PassRole
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - CostOptimizerAdminRole
+                - Arn
+        Version: "2012-10-17"
+      PolicyName: InvokeECSTaskPolicy
+      Roles:
+        - Ref: InvokeECSTaskRole
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/EcsClusterResources/EventsRolePolicy/Resource
+  ScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Rule to trigger WorkSpacesCostOptimizer function on a schedule.
+      ScheduleExpression: cron(0 23 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - CostOptimizerCluster
+              - Arn
+          EcsParameters:
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                AssignPublicIp: DISABLED
+                SecurityGroups:
+                  - Fn::If:
+                      - CreateNewVPCCondition
+                      - Fn::GetAtt:
+                          - IntraVPCSecurityGroup
+                          - GroupId
+                      - Ref: ExistingSecurityGroupId
+                Subnets:
+                  - Fn::If:
+                      - CreateNewVPCCondition
+                      - Fn::GetAtt:
+                          - PrivateSubnet1
+                          - SubnetId
+                      - Ref: AWS::NoValue
+                  - Fn::If:
+                      - CreateNewVPCCondition
+                      - Fn::GetAtt:
+                          - PrivateSubnet2
+                          - SubnetId
+                      - Ref: AWS::NoValue
+                  - Fn::If:
+                      - UseExistingVPCCondition
+                      - Ref: ExistingPrivateSubnetId
+                      - Ref: AWS::NoValue
+                  - Fn::If:
+                      - UseExistingVPCCondition
+                      - Ref: ExistingPrivateSubnet2Id
+                      - Ref: AWS::NoValue
+            PropagateTags: TASK_DEFINITION
+            TaskDefinitionArn:
+              Fn::GetAtt:
+                - CostOptimizerTaskDefinition
+                - TaskDefinitionArn
+          Id: CostOptimizerTaskDefinition
+          RoleArn:
+            Fn::GetAtt:
+              - InvokeECSTaskRole
+              - Arn
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/EcsClusterResources/rule/Resource
+  WorkspacesDashboardResourcesWorkspacesCostOptimizerDashboard0F703011:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardBody:
+        Fn::Join:
+          - ""
+          - - '{"start":"-P30D","periodOverride":"inherit","widgets":[{"type":"text","width":24,"height":1,"x":0,"y":0,"properties":{"markdown":"# WorkSpaces Overview"}},{"type":"metric","width":6,"height":6,"x":0,"y":1,"properties":{"view":"singleValue","title":"Total number of WorkSpaces Monitored in the last 24 hours","region":"'
+            - Ref: AWS::Region
+            - '","metrics":[["WorkspacesCostOptimizer","TotalWorkspaces",{"label":"Total Workspaces","period":86400,"stat":"Maximum"}]]}},{"type":"metric","width":6,"height":6,"x":6,"y":1,"properties":{"view":"pie","title":"WorkSpaces Billing Mode Distribution in the last 24 hours","region":"'
+            - Ref: AWS::Region
+            - '","metrics":[["WorkspacesCostOptimizer","HourlyBilledWorkspaces",{"label":"Hourly Billed","period":86400,"stat":"Maximum"}],["WorkspacesCostOptimizer","MonthlyBilledWorkspaces",{"label":"Monthly Billed","period":86400,"stat":"Maximum"}]],"yAxis":{},"setPeriodToTimeRange":false}},{"type":"metric","width":12,"height":6,"x":12,"y":1,"properties":{"view":"timeSeries","title":"WorkSpaces Billing Mode Distribution Over Time","region":"'
+            - Ref: AWS::Region
+            - '","stacked":true,"metrics":[["WorkspacesCostOptimizer","HourlyBilledWorkspaces",{"color":"#ff7f0e","label":"Hourly Billed","period":86400,"stat":"Maximum"}],["WorkspacesCostOptimizer","MonthlyBilledWorkspaces",{"color":"#1f77b4","label":"Monthly Billed","period":86400,"stat":"Maximum"}]],"yAxis":{"left":{"label":"Number of WorkSpaces","showUnits":false,"min":0}},"legend":{"position":"bottom"}}},{"type":"metric","width":6,"height":6,"x":0,"y":7,"properties":{"view":"singleValue","title":"Billing Mode Conversions","region":"'
+            - Ref: AWS::Region
+            - '","metrics":[["WorkspacesCostOptimizer","MonthlyToHourlyConversions","DryRun","No",{"label":"Monthly to Hourly","stat":"Sum"}],["WorkspacesCostOptimizer","HourlyToMonthlyConversions","DryRun","No",{"label":"Hourly to Monthly","stat":"Sum"}]],"setPeriodToTimeRange":true}},{"type":"metric","width":6,"height":6,"x":6,"y":7,"properties":{"view":"singleValue","title":"Total Terminated Workspaces","region":"'
+            - Ref: AWS::Region
+            - '","metrics":[["WorkspacesCostOptimizer","TerminatedWorkspaces","TerminationStatus","Terminated",{"label":"Terminated Workspaces","stat":"Sum"}]],"setPeriodToTimeRange":true}},{"type":"metric","width":12,"height":6,"x":12,"y":7,"properties":{"view":"timeSeries","title":"Total Terminated Workspaces Over Time","region":"'
+            - Ref: AWS::Region
+            - '","stacked":true,"metrics":[["WorkspacesCostOptimizer","TerminatedWorkspaces","TerminationStatus","Terminated",{"color":"#2ca02c","label":"Actual Terminations","period":86400,"stat":"Maximum"}],["WorkspacesCostOptimizer","TerminatedWorkspaces","TerminationStatus","DryRun",{"color":"#9467bd","label":"Dry Run Terminations","period":86400,"stat":"Maximum"}]],"yAxis":{"left":{"label":"Number of Workspaces","showUnits":false,"min":0}},"legend":{"position":"bottom"}}},{"type":"metric","width":12,"height":6,"x":0,"y":13,"properties":{"view":"timeSeries","title":"Unconverted Workspaces","region":"'
+            - Ref: AWS::Region
+            - '","stacked":true,"metrics":[["WorkspacesCostOptimizer","ConversionErrors",{"color":"#d62728","label":"Conversion Failures","period":86400,"stat":"Maximum"}],["WorkspacesCostOptimizer","ConversionSkips",{"color":"#7f7f7f","label":"Skip_Convert tagged Workspaces","period":86400,"stat":"Maximum"}],["WorkspacesCostOptimizer","MonthlyToHourlyConversions","DryRun","Yes",{"color":"#2ca02c","label":"Monthly to Hourly (Dry Run)","stat":"Maximum"}],["WorkspacesCostOptimizer","HourlyToMonthlyConversions","DryRun","Yes",{"color":"#1f77b4","label":"Hourly to Monthly (Dry Run)","stat":"Maximum"}]],"yAxis":{"left":{"label":"Number of WorkSpaces","showUnits":false,"min":0}},"legend":{"position":"bottom"}}},{"type":"metric","width":12,"height":6,"x":12,"y":13,"properties":{"view":"timeSeries","title":"Hourly to Monthly Billing Mode Conversions Over Time","region":"'
+            - Ref: AWS::Region
+            - '","stacked":true,"metrics":[["WorkspacesCostOptimizer","HourlyToMonthlyConversions","DryRun","Yes",{"color":"#1f77b4","label":"Dry Run","period":86400,"stat":"Maximum"}],["WorkspacesCostOptimizer","HourlyToMonthlyConversions","DryRun","No",{"color":"#2ca02c","label":"Actual","period":86400,"stat":"Maximum"}]],"yAxis":{"left":{"label":"Number of Conversions","showUnits":false,"min":0}},"legend":{"position":"bottom"}}},{"type":"metric","width":24,"height":6,"x":0,"y":19,"properties":{"view":"timeSeries","title":"ECS Task Execution Time","region":"'
+            - Ref: AWS::Region
+            - '","metrics":[["WorkspacesCostOptimizer","EcsTaskExecutionTime",{"period":86400,"stat":"Maximum"}]],"yAxis":{"left":{"label":"Minutes","showUnits":false,"min":0}},"legend":{"position":"bottom"}}}]}'
+      DashboardName:
+        Fn::Join:
+          - "-"
+          - - Ref: AWS::StackName
+            - Dashboard
+            - Fn::Select:
+                - 2
+                - Fn::Split:
+                    - /
+                    - Ref: AWS::StackId
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/WorkspacesDashboardResources/WorkspacesCostOptimizerDashboard/Resource
+  RegisterSpokeAccountsFunctionLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/RegisterSpokeAccount/RegisterSpokeAccountsFunctionLambdaRole/Resource
+    Condition: MultiAccountDeploymentCondition
+  RegisterSpokeAccountsFunctionLambdaPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":logs:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :log-group:/
+                  - Ref: AWS::Partition
+                  - /lambda/*
+          - Action:
+              - dynamodb:PutItem
+              - dynamodb:DeleteItem
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":dynamodb:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :table/
+                  - Ref: SpokeAccountTable
+          - Action: iam:PassRole
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - RegisterSpokeAccountsFunctionLambdaRole
+                - Arn
+          - Action:
+              - xray:PutTraceSegments
+              - xray:PutTelemetryRecords
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: InvokeECSTaskPolicy
+      Roles:
+        - Ref: RegisterSpokeAccountsFunctionLambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: X-ray requires * policy
+    Condition: MultiAccountDeploymentCondition
+  RegisterSpokeAccountsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Join:
+            - ""
+            - - solutions-
+              - Ref: AWS::Region
+        S3Key: cost-optimizer-for-amazon-workspaces/v2.7.4/register_spoke_lambda.zip
+      Environment:
+        Variables:
+          USER_AGENT_STRING: AwsSolution/SO0018/v2.7.4
+          DDB_TABLE_NAME:
+            Ref: SpokeAccountTable
+          LOG_LEVEL:
+            Ref: LogLevel
+      FunctionName:
+        Fn::Join:
+          - "-"
+          - - Fn::FindInMap:
+                - Solution
+                - Data
+                - RegisterLambdaFunctionName
+            - Ref: AWS::Region
+      Handler: register_spoke_lambda/register_spoke_accounts.lambda_handler
+      Role:
+        Fn::GetAtt:
+          - RegisterSpokeAccountsFunctionLambdaRole
+          - Arn
+      Runtime: python3.11
+      Timeout: 300
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - RegisterSpokeAccountsFunctionLambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: The lambda function has access to write logs
+          - id: W89
+            reason: The lambda function does not need access to resources in VPC
+          - id: W92
+            reason: ReservedConcurrentExecutions depends on the number of events for event bus
+          - id: W12
+            reason: Resource * is necessary for xray:PutTraceSegments and xray:PutTelemetryRecords.
+    Condition: MultiAccountDeploymentCondition
+  RegisterSpokeAccountsFunctionResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - RegisterSpokeAccountsFunction
+          - Arn
+      Principal: "*"
+      PrincipalOrgID:
+        Ref: OrganizationID
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F13
+            reason: Lambda principal is a wildcard to allow persmissions to all accounts in the Organization.
+    Condition: MultiAccountDeploymentCondition
+  Application:
+    Type: AWS::ServiceCatalogAppRegistry::Application
+    Properties:
+      Description: Service Catalog application to track and manage all your resources for the solution cost-optimizer-for-amazon-workspaces
+      Name:
+        Fn::Join:
+          - "-"
+          - - Fn::FindInMap:
+                - Solution
+                - Data
+                - AppRegistryApplicationName
+            - Ref: AWS::Region
+            - Ref: AWS::AccountId
+      Tags:
+        ApplicationType: AWS-Solutions
+        CloudFoundations:CostOptimizerForWorkspaces:
+          Ref: AWS::StackName
+        SolutionDomain: CloudFoundations
+        SolutionID: SO0018
+        SolutionName: cost-optimizer-for-amazon-workspaces
+        SolutionVersion: v2.7.4
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/AppRegistryHubResources/AppRegistry/Resource
+  AppRegistryApplicationStackAssociation:
+    Type: AWS::ServiceCatalogAppRegistry::ResourceAssociation
+    Properties:
+      Application:
+        Fn::GetAtt:
+          - Application
+          - Id
+      Resource:
+        Ref: AWS::StackId
+      ResourceType: CFN_STACK
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/AppRegistryHubResources/CfnResourceAssociation
+  DefaultApplicationAttributeGroup:
+    Type: AWS::ServiceCatalogAppRegistry::AttributeGroup
+    Properties:
+      Attributes:
+        applicationType: AWS-Solutions
+        version: v2.7.4
+        solutionID: SO0018
+        solutionName: cost-optimizer-for-amazon-workspaces
+      Description: Attribute group for solution information
+      Name:
+        Fn::Join:
+          - "-"
+          - - Fn::FindInMap:
+                - Solution
+                - Data
+                - AppRegistryApplicationName
+            - Ref: AWS::Region
+            - Ref: AWS::AccountId
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/AppRegistryHubResources/DefaultApplicationAttributeGroup/Resource
+  AppRegistryApplicationAttributeAssociation:
+    Type: AWS::ServiceCatalogAppRegistry::AttributeGroupAssociation
+    Properties:
+      Application:
+        Fn::GetAtt:
+          - Application
+          - Id
+      AttributeGroup:
+        Fn::GetAtt:
+          - DefaultApplicationAttributeGroup
+          - Id
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/AppRegistryHubResources/AttributeGroupAssociation
+  ApplicationInsightsConfiguration:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      AutoConfigurationEnabled: true
+      CWEMonitorEnabled: true
+      OpsCenterEnabled: true
+      ResourceGroupName:
+        Fn::Join:
+          - "-"
+          - - AWS_AppRegistry_Application
+            - Fn::FindInMap:
+                - Solution
+                - Data
+                - AppRegistryApplicationName
+            - Ref: AWS::Region
+            - Ref: AWS::AccountId
+    DependsOn:
+      - Application
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/AppRegistryHubResources/ApplicationInsightsConfiguration
+  ApplicationShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      AllowExternalPrincipals: false
+      Name:
+        Ref: AWS::StackName
+      PermissionArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :ram::aws:permission/AWSRAMPermissionServiceCatalogAppRegistryApplicationAllowAssociation
+      Principals:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - ":organizations::"
+              - Ref: ManagementAccountId
+              - :organization/
+              - Ref: OrganizationID
+      ResourceArns:
+        - Fn::GetAtt:
+            - Application
+            - Arn
+    Metadata:
+      aws:cdk:path: cost-optimizer-for-amazon-workspaces/AppRegistryHubResources/ApplicationShare
+    Condition: MultiAccountDeploymentCondition
+Outputs:
+  BucketName:
+    Description: The name of the bucket created by the solution.
+    Value:
+      Ref: CostOptimizerBucket
+  UUID:
+    Description: Unique identifier for this solution
+    Value:
+      Fn::GetAtt:
+        - UUIDGenerator
+        - UUID
+  LogLevel:
+    Value:
+      Ref: LogLevel
+    Export:
+      Name: LogLevel
+  DryRun:
+    Value:
+      Ref: DryRun
+    Export:
+      Name: DryRun
+  SendAnonymousData:
+    Value:
+      Fn::FindInMap:
+        - Solution
+        - Data
+        - SendAnonymousUsageData
+    Export:
+      Name: SendAnonymousData
+  SolutionID:
+    Value:
+      Fn::FindInMap:
+        - Solution
+        - Data
+        - ID
+    Export:
+      Name: SolutionID
+  SolutionVersion:
+    Value:
+      Fn::FindInMap:
+        - Solution
+        - Data
+        - Version
+    Export:
+      Name: SolutionVersion
+  TestEndOfMonth:
+    Value:
+      Ref: TestEndOfMonth
+    Export:
+      Name: TestEndOfMonth
+  ValueLimit:
+    Value:
+      Ref: ValueLimit
+    Export:
+      Name: ValueLimit
+  StandardLimit:
+    Value:
+      Ref: StandardLimit
+    Export:
+      Name: StandardLimit
+  PerformanceLimit:
+    Value:
+      Ref: PerformanceLimit
+    Export:
+      Name: PerformanceLimit
+  PowerLimit:
+    Value:
+      Ref: PowerLimit
+    Export:
+      Name: PowerLimit
+  PowerProLimit:
+    Value:
+      Ref: PowerProLimit
+    Export:
+      Name: PowerProLimit
+  GraphicsG4dnLimit:
+    Value:
+      Ref: GraphicsG4dnLimit
+    Export:
+      Name: GraphicsG4dnLimit
+  GraphicsProG4dnLimit:
+    Value:
+      Ref: GraphicsProG4dnLimit
+    Export:
+      Name: GraphicsProG4dnLimit
+
